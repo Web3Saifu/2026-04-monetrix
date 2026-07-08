@@ -1,0 +1,33 @@
+{
+  "title": "Monetrix Architecture",
+  "nodes": [
+    {"id": "users", "label": "Users", "subtitle": "Deposit / redeem / stake", "type": "actor", "row": 0},
+    {"id": "ops", "label": "Operator", "subtitle": "Bridge / hedge / yield", "type": "actor", "row": 0},
+    {"id": "gov", "label": "Governance", "subtitle": "Timelocked roles", "type": "actor", "row": 0},
+    {"id": "vault", "label": "MonetrixVault", "subtitle": "USDC / USDM hub", "type": "protocol", "row": 1},
+    {"id": "tokens", "label": "USDM / sUSDM", "subtitle": "Stablecoin / staking", "type": "protocol", "row": 1},
+    {"id": "accountant", "label": "Accountant", "subtitle": "Backing / yield gates", "type": "protocol", "row": 1},
+    {"id": "config", "label": "Config / ACL", "subtitle": "Parameters / roles", "type": "protocol", "row": 1},
+    {"id": "escrows", "label": "Escrows", "subtitle": "Redeem / yield / unstake", "type": "protocol", "row": 2},
+    {"id": "hypercore", "label": "HyperCore", "subtitle": "Precompiles / CoreWriter", "type": "external", "row": 2},
+    {"id": "external", "label": "USDC / Wallets", "subtitle": "Token / deposit wallet", "type": "external", "row": 2}
+  ],
+  "edges": [
+    {"from": "users", "to": "vault", "label": "deposit redeem"},
+    {"from": "users", "to": "tokens", "label": "stake unstake"},
+    {"from": "ops", "to": "vault", "label": "operate funds"},
+    {"from": "gov", "to": "config", "label": "set roles"},
+    {"from": "gov", "to": "vault", "label": "configure"},
+    {"from": "vault", "to": "tokens", "label": "mint burn"},
+    {"from": "vault", "to": "accountant", "label": "settle yield"},
+    {"from": "vault", "to": "escrows", "label": "fund claims"},
+    {"from": "vault", "to": "hypercore", "label": "bridge hedge"},
+    {"from": "accountant", "to": "hypercore", "label": "read backing"},
+    {"from": "vault", "to": "external", "label": "move USDC"},
+    {"from": "tokens", "to": "escrows", "label": "unstake USDM"}
+  ],
+  "groups": [
+    {"label": "Core Protocol", "nodes": ["vault", "tokens", "accountant", "config"]},
+    {"label": "Custody / External", "nodes": ["escrows", "hypercore", "external"]}
+  ]
+}
