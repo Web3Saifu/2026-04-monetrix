@@ -252,3 +252,4 @@ This file is a question/hypothesis queue, not a finding list. Nothing below is c
 - Current checkout cannot compile because `lib` submodules/dependencies are missing, so the first proof step may require `git submodule update --init --recursive`.
 - WSL/bash is unavailable on this machine; use PowerShell and Foundry directly.
 
+
