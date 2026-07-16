@@ -408,6 +408,59 @@ contract MonetrixV2Test is Test {
         assertEq(usdc.balanceOf(address(vault)), 0); // bridged to multisigVault
     }
 
+    /// @notice SQ-001 proof: principal bridged for the multisig is counted in the
+    /// global OLP ledger, but Vault bridge-back cannot spend it until the intended
+    /// multisig SPOT_SEND step moves L1 USDC to the Vault identity.
+    function test_SQ001_multisigPrincipal_requiresSpotSendBeforeVaultBridgeBack() public {
+        address multisig = address(0xCC);
+        uint256 bridged = 60_000e6;
+        uint256 requested = 20_000e6;
+
+        vm.etch(HyperCoreConstants.CORE_WRITER, address(new MockCoreWriter()).code);
+
+        vm.startPrank(admin);
+        vault.setMultisigVault(multisig);
+        vault.setMultisigVaultEnabled(true);
+        vm.stopPrank();
+
+        _depositAs(user1, bridged);
+        vm.warp(block.timestamp + config.bridgeInterval());
+        vm.prank(operator);
+        vault.keeperBridge(MonetrixVault.BridgeTarget.Multisig);
+
+        assertEq(depositWallet.lastRecipient(), multisig, "depositFor recipient");
+        assertEq(vault.outstandingL1Principal(), bridged, "global OLP counts multisig principal");
+
+        vm.startPrank(user1);
+        usdm.approve(address(vault), requested);
+        vault.requestRedeem(requested);
+        vm.stopPrank();
+
+        // Only the multisig L1 identity holds the USDC. Accountant recognizes
+        // that balance, but _sendL1Bridge checks address(vault), which is still 0.
+        MockPrecompile(payable(HyperCoreConstants.PRECOMPILE_SPOT_BALANCE)).setResponse(
+            abi.encode(multisig, uint64(HyperCoreConstants.USDC_TOKEN_INDEX)),
+            abi.encode(uint64(requested * 100), uint64(0), uint64(0))
+        );
+        assertEq(accountant.totalBacking(), requested, "multisig USDC is counted as backing");
+
+        vm.prank(operator);
+        vm.expectRevert("L1 USDC insufficient (unwind hedge or wait for settlement)");
+        vault.bridgePrincipalFromL1(requested);
+        assertEq(vault.outstandingL1Principal(), bridged, "failed bridge rolls OLP back");
+
+        // Model the documented multisig SPOT_SEND step 1 settling on Vault.
+        MockPrecompile(payable(HyperCoreConstants.PRECOMPILE_SPOT_BALANCE)).setResponse(
+            abi.encode(multisig, uint64(HyperCoreConstants.USDC_TOKEN_INDEX)),
+            abi.encode(uint64(0), uint64(0), uint64(0))
+        );
+        _mockVaultL1SpotUsdc(uint64(requested * 100));
+
+        vm.prank(operator);
+        vault.bridgePrincipalFromL1(requested);
+        assertEq(vault.outstandingL1Principal(), bridged - requested, "bridge works after SPOT_SEND");
+    }
+
     /// @notice Regression guard: when redemptions partially reserve cash, the
     /// keeper-bridge gate must still trigger so the safe portion of pending
     /// deposits is bridged. Previously this case (60k pending / 20k reserved /

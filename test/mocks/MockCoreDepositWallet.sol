@@ -10,16 +10,25 @@ contract MockCoreDepositWallet is ICoreDepositWallet {
     using SafeERC20 for IERC20;
 
     IERC20 public immutable token;
+    address public lastRecipient;
+    uint256 public lastAmount;
+    uint32 public lastDestination;
 
     constructor(address _token) {
         token = IERC20(_token);
     }
 
-    function deposit(uint256 amount, uint32) external override {
+    function deposit(uint256 amount, uint32 destination) external override {
+        lastRecipient = msg.sender;
+        lastAmount = amount;
+        lastDestination = destination;
         token.safeTransferFrom(msg.sender, address(this), amount);
     }
 
-    function depositFor(address, uint256 amount, uint32) external override {
+    function depositFor(address recipient, uint256 amount, uint32 destination) external override {
+        lastRecipient = recipient;
+        lastAmount = amount;
+        lastDestination = destination;
         token.safeTransferFrom(msg.sender, address(this), amount);
     }
 }

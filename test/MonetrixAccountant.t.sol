@@ -181,6 +181,21 @@ contract MonetrixAccountantTest is Test {
         mockVaultEquity.setResponse(key, response);
     }
 
+    /// @dev Hyperliquid 0x811 ABI-flattens
+    ///      BorrowLendUserTokenState { borrow; supply; } into four uint64 words.
+    function _setBorrowLendState(
+        uint64 token,
+        uint64 borrowBasis,
+        uint64 borrowValue,
+        uint64 supplyBasis,
+        uint64 supplyValue
+    ) internal {
+        mockSuppliedBalance.setResponse(
+            abi.encode(vault, token),
+            abi.encode(borrowBasis, borrowValue, supplyBasis, supplyValue)
+        );
+    }
+
     function _setEvmUsdc(uint256 amount) internal {
         usdc.mint(vault, amount);
     }
@@ -326,6 +341,49 @@ contract MonetrixAccountantTest is Test {
         _setEvmUsdc(500e6);
         // No precompile state set → all return 0
         assertEq(accountant.totalBacking(), 500e6);
+    }
+
+    /// @notice SQ-001 proof: Accountant reads only `supply.value` from 0x811
+    ///         and ignores `borrow.value`. Equal borrow and supply have zero net
+    ///         PM value, but gross supply is reported as backing and can pass
+    ///         the distributable-surplus settlement gate.
+    function test_SQ001_borrowLiabilityOmittedInflatesBackingAndAllowsSettle() public {
+        uint256 evmBacking = 1_000_000e6;
+        uint256 usdmLiability = 1_000_000e6;
+        uint64 borrowValue = 100_000e8;
+        uint64 supplyValue = 100_000e8;
+        uint256 proposedYield = 100e6;
+
+        _initializeBaseline(evmBacking, usdmLiability);
+        _raiseCapForTests();
+
+        // Register the USDC slot exactly as Vault.supplyToBlp() does.
+        vm.prank(vault);
+        accountant.notifyVaultSupply(uint64(HyperCoreConstants.USDC_TOKEN_INDEX), 0);
+
+        // Canonical tuple order: borrow.basis, borrow.value,
+        // supply.basis, supply.value. Net PM backing is zero here.
+        _setBorrowLendState(
+            uint64(HyperCoreConstants.USDC_TOKEN_INDEX),
+            borrowValue,
+            borrowValue,
+            supplyValue,
+            supplyValue
+        );
+
+        uint256 correctNetBacking = evmBacking + (uint256(supplyValue) - uint256(borrowValue)) / 100;
+        assertEq(correctNetBacking, usdmLiability, "independent net equity has zero surplus");
+
+        // Current code selects tuple word four only, crediting gross supply.
+        assertEq(accountant.totalBacking(), 1_100_000e6, "gross supply is credited");
+        assertEq(accountant.surplus(), int256(100_000e6), "borrow liability is omitted");
+
+        vm.warp(block.timestamp + 21 hours);
+        vm.prank(vault);
+        uint256 reportedDistributable = accountant.settleDailyPnL(proposedYield);
+
+        assertEq(reportedDistributable, 100_000e6, "phantom surplus passes gate 3");
+        assertEq(accountant.totalSettledYield(), proposedYield, "unearned yield accepted");
     }
 
     // ─── Tests: surplus ──────────────────────────────────────
