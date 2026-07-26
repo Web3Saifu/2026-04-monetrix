@@ -4,6 +4,7 @@
 
 ---
 
+
 ## 1. Protocol Overview
 
 **What it does:** Monetrix is a USDC-backed synthetic dollar system on HyperEVM with USDM mint/redeem, sUSDM staking, HyperCore strategy operations, and accounting-gated yield distribution.
